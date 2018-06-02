@@ -11,11 +11,15 @@ classdef lplrs2018 < handle
         
         portName = '/dev/ttyACM0';
         baud = 115200;
+        
+        suppressOutput = false;
+        
+        mostRecentWeight
     end
     
     methods
         
-        %  Class constructor        
+        %  Class constructor
         function obj = lplrs2018(varargin)
             
             %  Update parameter values
@@ -25,25 +29,40 @@ classdef lplrs2018 < handle
                 end
             end
             
+            %  Close the port if it is already open
+            s = instrfind('Port',obj.portName,'Status','open');
+            if(~isempty(s))
+                fclose(s);
+            end
+            
+            %  Create the serial object and open it
             obj.serialObj = serial(obj.portName,'baud',obj.baud);
             fopen(obj.serialObj);
-
+            
             %  Opening the port will restart the Arduino and cause it to
             %  dump some text to the serial port, so wait a moment for this
             %  to complete.
             while(obj.serialObj.BytesAvailable==0)
             end
             
-            %  Clear the serial buffer and write contents to the command
-            %  line
-            while(obj.serialObj.BytesAvailable > 0)
+            %  Write greeting to command window (first three lines)
+            for i=1:3
                 temp = fscanf(obj.serialObj);
                 fprintf('%s',temp(1:end-1));
             end
             
+            %  Clear the serial buffer and write contents to the command
+            %  line unless this is suppressed
+            while(obj.serialObj.BytesAvailable > 0)
+                temp = fscanf(obj.serialObj);
+                if(~obj.suppressOutput);
+                    fprintf('%s',temp(1:end-1));
+                end
+            end
+            
         end
         
-        %  Class destructor        
+        %  Class destructor
         function delete(obj)
             obj.close;
         end
@@ -54,26 +73,47 @@ classdef lplrs2018 < handle
         end
         
         %  Send command to tare scale
-        function tare(obj)
-            fprintf(obj.serialObj,'T');
+        function tare(obj,varargin)
+            if nargin==1
+                numSamples = [];
+            else
+                numSamples = varargin{1};
+            end
+            
+            %  Write 'T' and number of samples to serial
+            fprintf(obj.serialObj,'T%d',numSamples);
+            obj.mostRecentWeight = 0;
         end
         
         %  Send command to measure weight (in grams)
-        function measureWeight(obj)
-            
-            %  Prior to sending command to measure weight, clear the
-            %  incoming serial buffer.
-            while(obj.serialObj.BytesAvailable>0)
-                fscanf(obj.serialObj);
+        function measureWeight(obj,varargin)
+            if nargin==1
+                numSamples = [];
+            else
+                numSamples = varargin{1};
             end
             
             %  Write 'U' to serial
-            fprintf(obj.serialObj,'U');
+            fprintf(obj.serialObj,'U%d',numSamples);
         end
         
-        %  Read weight out of serial buffer
-        function output = readWeight(obj)
-            output = fscanf(obj.serialObj);
+        %  Clear serial buffer
+        function clearSerialBuffer(obj)
+            while(obj.serialObj.BytesAvailable>0)
+                fscanf(obj.serialObj);
+            end
+        end
+        
+        %  Read weight if available in serial buffer
+        %  Include optional argument 'wait' if you want to wait for data
+        function readWeight(obj,varargin)
+            if(any(strcmpi('wait',varargin)))
+                while(obj.serialObj.BytesAvailable==0)
+                end
+            end
+            if(obj.serialObj.BytesAvailable>0)
+                obj.mostRecentWeight = fscanf(obj.serialObj,'%f');
+            end
         end
     end
 end

@@ -23,7 +23,7 @@
    D3 is INT5
 
    15 PWM pins with 6 timers:
-   timer0--4, 13; 8 bit and used for dealy(), millis(), micros() etc.
+   timer0--4, 13; 8 bit and used for delay(), millis(), micros() etc.
    timer1--11, 12; 16 bit
    timer2--9, 10; 8 bit
    timer3--2, 3, 5; 16 bit and allows PWM output that we use on pin 5.
@@ -117,13 +117,13 @@ const int holdVoltage = 85;
 volatile unsigned int drainCycles = 0;
 const unsigned int maxDrainCycles = 200;  // 200 seconds when using timer1 at 1 Hz
 
-char menu[8][50] = {
+char menu[8][100] = {
   "Available commands from serial monitor:",
-  "T--tare",
-  "R--read scale without units",
-  "U--read scale with units",
-  "W--weight calibration",
-  "F--flow calibration",
+  "T#--tare scale using # samples (default 100 if # not specified)",
+  "R#--read scale without units using # samples (default 100)",
+  "U#--read scale with units using # samples (default 100)",
+  "W#--weight calibration using # samples (default 100)",
+  "F#--flow calibration using # samples (default 100)",
   "M--this menu",
   ""
 };
@@ -384,6 +384,7 @@ ISR (TIMER5_COMPA_vect)
 
 void setup() {
   float hx711Scale;
+  char floatBuffer[10];
 
   // Set pins
   pinMode(__manualTrigger, INPUT_PULLUP);
@@ -461,14 +462,21 @@ void setup() {
 
   // Open serial port
   Serial.begin(115200);
-  Serial.println("Serial port opened; running lplrs2018 reward system version 1.0");
-  Serial.println("Lee Lovejoy, ll2833@columbia.edu, March 2018");
+  Serial.println("lplrs2018 reward system version 1.0 | Lee Lovejoy, ll2833@columbia.edu, March 2018");
 
   // Load the scale for HX711 from EEPROM
   EEPROM.get(0, hx711Scale);
   hx711.set_scale(hx711Scale);
   Serial.print("HX711 scale:   ");
   Serial.println(hx711.get_scale());
+
+  unsigned long t = millis();
+  hx711.get_value(10);
+  t = millis() - t;
+  Serial.print("HX711 approximate sampling rate: ");
+  dtostrf(1000 * 10 / (float) t, 6, 3, floatBuffer);
+  Serial.print(floatBuffer);
+  Serial.println(" SPS");
 
   // Display serial monitor menu
   for (int i = 0 ; i < nMenuItems ; i++) Serial.println(menu[i]);
@@ -489,169 +497,176 @@ void loop() {
   char textBuffer[80];
   byte precision = 4;
 
-  if (Serial.available() > 0)
-  {
-    int command = Serial.read();
-    while (Serial.available() > 0) Serial.read();
+  int command;
+  int modifier;
+  int numSamples = 100;
 
-    switch (command) {
+  //  Wait for command to be available in serial buffer
+  while (!Serial.available());
 
-      /*
-         M--print menu to serial
-      */
-      case 'M':
-        for (int i = 0 ; i < nMenuItems ; i++) Serial.println(menu[i]);
-        break;
+  //  Capture first character.  This is the command.
+  command = Serial.read();
 
-      /*
-         T--tare scale
-      */
-      case 'T':
+  //  Capture remainder.  This is the number of samples.
+  modifier = Serial.parseInt();
+  if (modifier) numSamples = modifier;
+
+  switch (command) {
+
+    /*
+       M--print menu to serial
+    */
+    case 'M':
+      for (int i = 0 ; i < nMenuItems ; i++) Serial.println(menu[i]);
+      break;
+
+    /*
+       T--tare scale
+    */
+    case 'T':
+      digitalWrite(__LED, HIGH);
+      hx711.tare(numSamples);
+      digitalWrite(__LED, LOW);
+      break;
+
+    /*
+       R--read scale without units
+    */
+    case 'R':
+      digitalWrite(__LED, HIGH);
+      Serial.println(hx711.get_value(numSamples), 3);
+      digitalWrite(__LED, LOW);
+      break;
+
+    /*
+       U--read scale with units
+    */
+    case 'U':
+      digitalWrite(__LED, HIGH);
+      Serial.println(hx711.get_units(numSamples), 3);
+      digitalWrite(__LED, LOW);
+      break;
+
+    /*
+       W--weight calibration
+    */
+    case 'W':
+      Serial.println("WEIGHT CALIBRATION ROUTINE");
+      Serial.println("");
+      Serial.println("The HX711 is tared between each reading--we are determining the scale.");
+      Serial.println("");
+      Serial.println("Use keyboard to proceed as instructed.");
+      Serial.println("");
+
+      for (int i = 0 ; i < nCalibrationWeights ; i++)
+      {
+        Serial.print("Add the ");
+        Serial.print(calibrationWeight[i], 1);
+        Serial.println(" g weight and send a character to tare the scale.");
+
+        // wait for first character then clear buffer
+        while (!Serial.available());
+        while (Serial.available() > 0) Serial.read();
+
+        Serial.println("Taring scale now...");
         digitalWrite(__LED, HIGH);
-        hx711.tare(100);
+        hx711.tare(numSamples);
         digitalWrite(__LED, LOW);
-        Serial.println("Scale tared");
-        break;
-
-      /*
-         R--read scale without units
-      */
-      case 'R':
-        digitalWrite(__LED, HIGH);
-        Serial.println(hx711.get_value(100), 3);
-        digitalWrite(__LED, LOW);
-        break;
-
-      /*
-         U--read scale with units
-      */
-      case 'U':
-        digitalWrite(__LED, HIGH);
-        Serial.println(hx711.get_units(100), 3);
-        digitalWrite(__LED, LOW);
-        break;
-
-      /*
-         W--weight calibration
-      */
-      case 'W':
-        Serial.println("WEIGHT CALIBRATION ROUTINE");
-        Serial.println("");
-        Serial.println("The HX711 is tared between each reading--we are determining the scale.");
-        Serial.println("");
-        Serial.println("Use keyboard to proceed as instructed.");
-        Serial.println("");
-
-        for (int i = 0 ; i < nCalibrationWeights ; i++)
-        {
-          Serial.print("Add the ");
-          Serial.print(calibrationWeight[i], 1);
-          Serial.println(" g weight and send a character to tare the scale.");
-
-          // wait for first character then clear buffer
-          while (!Serial.available());
-          while (Serial.available() > 0) Serial.read();
-
-          Serial.println("Taring scale now...");
-          digitalWrite(__LED, HIGH);
-          hx711.tare(100);
-          digitalWrite(__LED, LOW);
-          Serial.println("Remove the weight and send a character to read weight.");
-
-          // wait for first character then clear buffer
-          while (!Serial.available());
-          while (Serial.available()) Serial.read();
-
-          Serial.println("Measuring weight now...");
-          digitalWrite(__LED, HIGH);
-          reading = hx711.get_value(100);
-          digitalWrite(__LED, LOW);
-          hx711Scale += -reading / calibrationWeight[i];
-          Serial.print("Reading:  ");
-          Serial.println(reading);
-          Serial.println("");
-        }
-        hx711Scale /= nCalibrationWeights;
-        Serial.print("HX711 scale is  ");
-        Serial.println(hx711Scale);
-        Serial.println("");
-        EEPROM.put(0, hx711Scale);
-        Serial.println("Wrote scale to EEPROM");
-
-        hx711.set_scale(hx711Scale);
-        Serial.println("Set scale in HX711 object");
-
-        Serial.println("Calibration routine complete");
-        break;
-
-      /*
-         F--flow calibration
-      */
-      case 'F':
-        Serial.println("FLOW CALIBRATION ROUTINE");
-        Serial.println("");
-        Serial.println("Please fill the reservoir and drain to starting level.");
-        Serial.println("Remember to disconnect the external digital trigger!");
-        Serial.println("");
-        Serial.println("Once you begin, manual trigger and auto drain disabled until calibration complete.");
-        Serial.println("");
-        Serial.println("Send any character to continue.");
+        Serial.println("Remove the weight and send a character to read weight.");
 
         // wait for first character then clear buffer
         while (!Serial.available());
         while (Serial.available()) Serial.read();
-        Serial.println("Starting flow calibration routine.");
 
-        inCalibration = true;
+        Serial.println("Measuring weight now...");
+        digitalWrite(__LED, HIGH);
+        reading = hx711.get_value(numSamples);
+        digitalWrite(__LED, LOW);
+        hx711Scale += -reading / calibrationWeight[i];
+        Serial.print("Reading:  ");
+        Serial.println(reading);
+        Serial.println("");
+      }
+      hx711Scale /= nCalibrationWeights;
+      Serial.print("HX711 scale is  ");
+      Serial.println(hx711Scale);
+      Serial.println("");
+      EEPROM.put(0, hx711Scale);
+      Serial.println("Wrote scale to EEPROM");
 
-        /*
-           Calibration loop
-        */
-        for (int i = 0 ; i < nSequences ; i++)
+      hx711.set_scale(hx711Scale);
+      Serial.println("Set scale in HX711 object");
+
+      Serial.println("Calibration routine complete");
+      break;
+
+    /*
+       F--flow calibration
+    */
+    case 'F':
+      Serial.println("FLOW CALIBRATION ROUTINE");
+      Serial.println("");
+      Serial.println("Please fill the reservoir and drain to starting level.");
+      Serial.println("Remember to disconnect the external digital trigger!");
+      Serial.println("");
+      Serial.println("Once you begin, manual trigger and auto drain disabled until calibration complete.");
+      Serial.println("");
+      Serial.println("Send any character to continue.");
+
+      // wait for first character then clear buffer
+      while (!Serial.available());
+      while (Serial.available()) Serial.read();
+      Serial.println("Starting flow calibration routine.");
+
+      inCalibration = true;
+
+      /*
+         Calibration loop
+      */
+      for (int i = 0 ; i < nSequences ; i++)
+      {
+        for (int j = 0 ; j < nOpenTimes ; j++)
         {
-          for (int j = 0 ; j < nOpenTimes ; j++)
-          {
-            digitalWrite(__LED, HIGH);
-            hx711.tare(100);
-            digitalWrite(__LED, LOW);
+          digitalWrite(__LED, HIGH);
+          hx711.tare(numSamples);
+          digitalWrite(__LED, LOW);
 
-            maxTicks = openTime[j];
-            releaseCount = 0;
-            maxReleases = numOpens[j];
-            sequenceComplete = false;
+          maxTicks = openTime[j];
+          releaseCount = 0;
+          maxReleases = numOpens[j];
+          sequenceComplete = false;
 
-            // Don't clear the interrupt flag; that way this executes immediately
-            TCNT1 = 0;                // reset TCNT1
-            TIMSK1 |= (1 << OCIE1B);  // enable itnerrupt TIMER1_COMPB_vect
+          // Don't clear the interrupt flag; that way this executes immediately
+          TCNT1 = 0;                // reset TCNT1
+          TIMSK1 |= (1 << OCIE1B);  // enable itnerrupt TIMER1_COMPB_vect
 
-            while (!sequenceComplete);
-            digitalWrite(__LED, HIGH);
-            dispensedVolume = -hx711.get_units(100);
-            digitalWrite(__LED, LOW);
+          while (!sequenceComplete);
+          digitalWrite(__LED, HIGH);
+          dispensedVolume = -hx711.get_units(numSamples);
+          digitalWrite(__LED, LOW);
 
-            /*
-               Send output as text string to serial:
-               duration of valve opening (ms)
-               iteration number
-               total dispensed volume (mL)
-               dispensed volume per valve opening (mL)
-               flow rate (mL per ms)
-            */
+          /*
+             Send output as text string to serial:
+             duration of valve opening (ms)
+             iteration number
+             total dispensed volume (mL)
+             dispensed volume per valve opening (mL)
+             flow rate (mL per ms)
+          */
 
-            dtostrf(totalDispensedVolume, precision + 6, precision, floatBuffer[0]);
-            dtostrf(dispensedVolume / numOpens[j], precision + 6, precision, floatBuffer[1]);
-            dtostrf(dispensedVolume / (numOpens[j]*openTime[j]), precision + 6, precision, floatBuffer[2]);
-            sprintf(textBuffer, "%4d %d %s %s %s", openTime[j], i + 1, floatBuffer[0], floatBuffer[1], floatBuffer[2]);
-            Serial.println(textBuffer);
+          dtostrf(totalDispensedVolume, precision + 6, precision, floatBuffer[0]);
+          dtostrf(dispensedVolume / numOpens[j], precision + 6, precision, floatBuffer[1]);
+          dtostrf(dispensedVolume / (numOpens[j]*openTime[j]), precision + 6, precision, floatBuffer[2]);
+          sprintf(textBuffer, "%4d %d %s %s %s", openTime[j], i + 1, floatBuffer[0], floatBuffer[1], floatBuffer[2]);
+          Serial.println(textBuffer);
 
-            totalDispensedVolume += dispensedVolume;
-          }
+          totalDispensedVolume += dispensedVolume;
         }
+      }
 
-        Serial.println("Completed flow calibration routine.");
+      Serial.println("Completed flow calibration routine.");
 
-        inCalibration = false;
-        break;
-    }
+      inCalibration = false;
+      break;
   }
 }
