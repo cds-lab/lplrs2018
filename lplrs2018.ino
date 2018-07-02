@@ -470,14 +470,6 @@ void setup() {
   Serial.print("HX711 scale:   ");
   Serial.println(hx711.get_scale());
 
-  unsigned long t = millis();
-  hx711.get_value(10);
-  t = millis() - t;
-  Serial.print("HX711 approximate sampling rate: ");
-  dtostrf(1000 * 10 / (float) t, 6, 3, floatBuffer);
-  Serial.print(floatBuffer);
-  Serial.println(" SPS");
-
   // Display serial monitor menu
   for (int i = 0 ; i < nMenuItems ; i++) Serial.println(menu[i]);
 }
@@ -526,6 +518,7 @@ void loop() {
     case 'T':
       digitalWrite(__LED, HIGH);
       hx711.tare(numSamples);
+      Serial.println(0);
       digitalWrite(__LED, LOW);
       break;
 

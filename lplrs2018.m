@@ -14,7 +14,7 @@ classdef lplrs2018 < handle
         
         suppressOutput = false;
         
-        mostRecentWeight
+        mostRecentRead = 0;
     end
     
     methods
@@ -45,11 +45,9 @@ classdef lplrs2018 < handle
             while(obj.serialObj.BytesAvailable==0)
             end
             
-            %  Write greeting to command window (first three lines)
-            for i=1:3
-                temp = fscanf(obj.serialObj);
-                fprintf('%s',temp(1:end-1));
-            end
+            %  Write greeting to command window (first line)
+            temp = fscanf(obj.serialObj);
+            fprintf('%s',temp(1:end-1));
             
             %  Clear the serial buffer and write contents to the command
             %  line unless this is suppressed
@@ -72,29 +70,9 @@ classdef lplrs2018 < handle
             fclose(obj.serialObj);
         end
         
-        %  Send command to tare scale
-        function tare(obj,varargin)
-            if nargin==1
-                numSamples = [];
-            else
-                numSamples = varargin{1};
-            end
-            
-            %  Write 'T' and number of samples to serial
-            fprintf(obj.serialObj,'T%d',numSamples);
-            obj.mostRecentWeight = 0;
-        end
-        
-        %  Send command to measure weight (in grams)
-        function measureWeight(obj,varargin)
-            if nargin==1
-                numSamples = [];
-            else
-                numSamples = varargin{1};
-            end
-            
-            %  Write 'U' to serial
-            fprintf(obj.serialObj,'U%d',numSamples);
+        %  Send command to serial buffer
+        function writeSerial(obj,argument)
+            fprintf(obj.serialObj,sprintf('%s',argument));
         end
         
         %  Clear serial buffer
@@ -104,16 +82,26 @@ classdef lplrs2018 < handle
             end
         end
         
-        %  Read weight if available in serial buffer
+        %  Read serial data if available in serial buffer
         %  Include optional argument 'wait' if you want to wait for data
-        function readWeight(obj,varargin)
+        function readSerial(obj,varargin)
             if(any(strcmpi('wait',varargin)))
                 while(obj.serialObj.BytesAvailable==0)
                 end
             end
             if(obj.serialObj.BytesAvailable>0)
-                obj.mostRecentWeight = fscanf(obj.serialObj,'%f');
+                obj.mostRecentRead = fscanf(obj.serialObj,'%f');
             end
+        end
+        
+        %  Send the command to tare the scale
+        function startTare(obj)            
+            obj.writeSerial('T10');
+        end
+        
+        %  Send the command to read the weight
+        function startWeigh(obj)
+            obj.writeSerial('U10');
         end
     end
 end
